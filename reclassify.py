@@ -16,7 +16,7 @@ LABEL_PRIORITY = {
 }
 
 # Define the overlap threshold and within a line threshold
-INSIDE_THRESHOLD = 0.98
+INSIDE_THRESHOLD = 0.95
 OVERLAP_THRESHOLD = 0.05
 LINE_OVERLAP_THRESHOLD = 0.98
 
@@ -133,17 +133,21 @@ def handle_rects_inside_other_rects(layout_rects: List[LabelBox]) -> List[LabelB
     Handle rectangles that are inside other rectangles.
     This function deletes any rectangles that are fully inside another rectangle.
     """
+    # Sort rectangles by area (from largest to smallest)
+    layout_rects.sort(key=lambda rect: (rect.box[2] - rect.box[0]) * (rect.box[3] - rect.box[1]), reverse=True)
+    
     adjusted_rects = []
     
     while layout_rects:
-        rect = layout_rects.pop(0)  # Take the first rect
+        rect = layout_rects.pop(0)  # Take the largest rect
         contained_in_other_rect = False
-
-        for other_rect in layout_rects:
+        
+        # Compare only against larger rectangles already added to adjusted_rects
+        for other_rect in adjusted_rects:
             if is_inside(rect.box, other_rect.box):
                 logger.debug(f"Rect {rect.box} is inside {other_rect.box}, deleting it.")
                 contained_in_other_rect = True
-                break  # Break after finding the rect is inside another to avoid redundant checks
+                break  # No need to check further if it's inside another rect
 
         if not contained_in_other_rect:
             adjusted_rects.append(rect)
@@ -197,12 +201,6 @@ def handle_rects_overlap_other_rects(layout_rects: List[LabelBox]) -> List[Label
     adjusted_rects.extend(layout_rects)
     return adjusted_rects
 
-
-# def rects_overlap(rect1: List[float], rect2: List[float]) -> bool:
-#     """
-#     Check if two rectangles overlap.
-#     """
-#     return not (rect1[2] <= rect2[0] or rect1[0] >= rect2[2] or rect1[3] <= rect2[1] or rect1[1] >= rect2[3])
 
 def rects_overlap(rect1: List[float], rect2: List[float], threshold: float = OVERLAP_THRESHOLD) -> bool:
     """
