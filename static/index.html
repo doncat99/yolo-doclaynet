@@ -215,13 +215,15 @@
         }
 
         function drawCompareLayer(svgOverlay) {
-            outsideRects.forEach(rect => {
-                const textElement = createSVGText(rect, rect.text, "blue");
+            outsideRects.forEach(box => {
+                const rect = { x0: box.box[0], y0: box.box[1], x1: box.box[2], y1: box.box[3] };
+                const textElement = createSVGText(rect, box.text, "blue");
                 svgOverlay.appendChild(textElement);
             });
 
-            insideRects.forEach(rect => {
-                const textElement = createSVGText(rect, rect.text, "red");
+            insideRects.forEach(box => {
+                const rect = { x0: box.box[0], y0: box.box[1], x1: box.box[2], y1: box.box[3] };
+                const textElement = createSVGText(rect, box.text, "red");
                 svgOverlay.appendChild(textElement);
             });
         }

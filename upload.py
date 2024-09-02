@@ -39,10 +39,7 @@ def upload_pdf(file: UploadFile, upload_dir: Path, images_dir: Path, dpi: int = 
                     continue
 
                 rect = TextRect(
-                    x0=char["x0"],
-                    y0=char["top"],
-                    x1=char["x1"],
-                    y1=char["bottom"],
+                    box=[char["x0"], char["top"], char["x1"], char["bottom"]],
                     text=text,
                     fontname=char["fontname"],
                     size=round(char["size"])

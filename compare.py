@@ -1,17 +1,19 @@
 # compare.py
-from models import TextRect
+import json
+from pathlib import Path
+
 from fastapi import HTTPException
 from loguru import logger
-from pathlib import Path
-import json
+
+from models import TextRect
 
 def convert_pdf_to_image_coords(x0, y0, x1, y1, scale_x, scale_y):
-    return (
+    return [
         x0 * scale_x,
         y0 * scale_y,
         x1 * scale_x,
         y1 * scale_y
-    )
+    ]
 
 def compare_layout(file_id: str, page_number: int, layout_data: dict, text_data: dict, scaling_factors: dict, output_dir: Path):
     if file_id not in layout_data or file_id not in text_data:
@@ -50,14 +52,11 @@ def compare_layout(file_id: str, page_number: int, layout_data: dict, text_data:
 
     for text_rect in text_rects:
         converted_rect = convert_pdf_to_image_coords(
-            text_rect.x0, text_rect.y0, text_rect.x1, text_rect.y1, scale_x, scale_y
+            text_rect.box[0], text_rect.box[1], text_rect.box[2], text_rect.box[3], scale_x, scale_y
         )
 
         scaled_text_rect = TextRect(
-            x0=converted_rect[0],
-            y0=converted_rect[1],
-            x1=converted_rect[2],
-            y1=converted_rect[3],
+            box=converted_rect,
             text=text_rect.text,
             fontname=text_rect.fontname,
             size=text_rect.size

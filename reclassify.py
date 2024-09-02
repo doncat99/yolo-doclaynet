@@ -250,8 +250,8 @@ def calculate_font_statistics(inside_rects: List[TextRect], layout_rects: List[L
         
         # Find the corresponding LabelBox for the current TextRect
         for label_box in layout_rects:
-            if (label_box.box[0] <= rect.x0 <= label_box.box[2]) and \
-               (label_box.box[1] <= rect.y0 <= label_box.box[3]):
+            if (label_box.box[0] <= rect.box[0] <= label_box.box[2]) and \
+               (label_box.box[1] <= rect.box[1] <= label_box.box[3]):
                 font_label_counts[font_key][label_box.label] += 1
                 break
 
@@ -301,7 +301,7 @@ def needs_split_based_on_fonts(rect: LabelBox, inside_rects: List[TextRect], fon
     Returns:
         True if the rect needs to be split based on font analysis, False otherwise.
     """
-    fonts_in_rect = [(r.fontname, r.size) for r in inside_rects if r.x0 >= rect.box[0] and r.x1 <= rect.box[2] and r.y0 >= rect.box[1] and r.y1 <= rect.box[3]]
+    fonts_in_rect = [(r.fontname, r.size) for r in inside_rects if r.box[0] >= rect.box[0] and r.box[2] <= rect.box[2] and r.box[1] >= rect.box[1] and r.box[3] <= rect.box[3]]
     logger.debug(f"Fonts in Rect {fonts_in_rect}")
     distinct_labels = set(font_to_label_map.get((font, size), rect.label) for font, size in fonts_in_rect)
     
@@ -314,14 +314,14 @@ def needs_split_based_on_fonts(rect: LabelBox, inside_rects: List[TextRect], fon
 
 def split_rect_based_on_fonts(rect: LabelBox, inside_rects: List[TextRect], font_to_label_map: Dict[Tuple[str, float], str]) -> List[LabelBox]:
     split_rects = []
-    fonts_in_rect = [(r.fontname, r.size) for r in inside_rects if r.x0 >= rect.box[0] and r.x1 <= rect.box[2] and r.y0 >= rect.box[1] and r.y1 <= rect.box[3]]
+    fonts_in_rect = [(r.fontname, r.size) for r in inside_rects if r.box[0] >= rect.box[0] and r.box[2] <= rect.box[2] and r.box[1] >= rect.box[1] and r.box[3] <= rect.box[3]]
     for font in set(fonts_in_rect):
         matching_rects = [r for r in inside_rects if r.fontname == font[0] and r.size == font[1]]
         if matching_rects:
-            x0 = min(r.x0 for r in matching_rects)
-            y0 = min(r.y0 for r in matching_rects)
-            x1 = max(r.x1 for r in matching_rects)
-            y1 = max(r.y1 for r in matching_rects)
+            x0 = min(r.box[0] for r in matching_rects)
+            y0 = min(r.box[1] for r in matching_rects)
+            x1 = max(r.box[2] for r in matching_rects)
+            y1 = max(r.box[3] for r in matching_rects)
             
             new_label = font_to_label_map.get((font[0], font[1]), rect.label)  # Default to the original label if not found
             new_rect = LabelBox(label=new_label, box=[x0, y0, x1, y1])
@@ -389,140 +389,6 @@ def split_rect(larger_rect: LabelBox, smaller_rect: LabelBox) -> List[LabelBox]:
 
     return new_rects
 
-# def regroup_outside_text(outside_rects: List[TextRect], layout_rects: List[LabelBox], font_stats: Dict[Tuple[str, float], str]) -> List[LabelBox]:
-#     """
-#     Analyzes the existing layout rect types and groups the outside text rects into new layout rects,
-#     ensuring that the new layout rects do not overlap with any existing layout rects.
-
-#     Args:
-#         outside_rects: List of text rectangles outside the existing layout rectangles.
-#         layout_rects: List of existing layout rectangles.
-#         font_stats: A dictionary mapping (font name, font size) to the most common label within that font group.
-
-#     Returns:
-#         A list of new layout rectangles created based on the outside text grouping.
-#     """
-#     # Step 1: Group outside rects to form new layout rectangles.
-#     new_layout_rects = []
-#     grouped_rects = []  # Track already grouped rectangles to avoid duplicates
-
-#     for outside_rect in outside_rects:
-#         if outside_rect in grouped_rects:
-#             continue
-
-#         # Determine the most likely layout type based on font similarity using font_stats
-#         font_key = (outside_rect.fontname, outside_rect.size)
-#         matching_type = font_stats.get(font_key, "Text")  # Default to "Text" if no match is found
-
-#         # Group rects (for simplicity, consider nearby rects as part of the same group)
-#         grouped_rect = outside_rect
-
-#         for other_rect in outside_rects:
-#             if other_rect != outside_rect and other_rect not in grouped_rects:
-#                 # Basic proximity check for grouping
-#                 if (abs(grouped_rect.x1 - other_rect.x0) < 20 or abs(grouped_rect.y1 - other_rect.y0) < 20):
-#                     # Expand the grouped rectangle to include the other rectangle
-#                     grouped_rect = TextRect(
-#                         x0=min(grouped_rect.x0, other_rect.x0),
-#                         y0=min(grouped_rect.y0, other_rect.y0),
-#                         x1=max(grouped_rect.x1, other_rect.x1),
-#                         y1=max(grouped_rect.y1, other_rect.y1),
-#                         text=grouped_rect.text + " " + other_rect.text,
-#                         fontname=grouped_rect.fontname,
-#                         size=grouped_rect.size
-#                     )
-#                     grouped_rects.append(other_rect)
-
-#         # Create a new layout rect based on the grouped rect
-#         new_rect = LabelBox(
-#             label=matching_type,
-#             box=[grouped_rect.x0, grouped_rect.y0, grouped_rect.x1, grouped_rect.y1]
-#         )
-
-#         # Check if the new rect overlaps with any existing rects in layout_rects
-#         if any(rects_overlap(new_rect.box, existing_rect.box) for existing_rect in layout_rects):
-#             logger.debug(f"Skipping new rect {new_rect.box} due to overlap with existing layout rects.")
-#             continue  # Skip adding this new rect if it overlaps with any existing layout rects
-
-#         new_layout_rects.append(new_rect)
-    
-#     layout_rects.extend(new_layout_rects)
-
-#     return layout_rects
-
-
-# def regroup_outside_text(outside_rects: List[TextRect], layout_rects: List[LabelBox], font_stats: Dict[Tuple[str, float], str]) -> List[LabelBox]:
-#     """
-#     Group the outside text rectangles into larger blocks, combining them line by line while ensuring that
-#     the new blocks do not overlap with any existing layout rectangles.
-
-#     Args:
-#         outside_rects: List of text rectangles outside the existing layout rectangles.
-#         layout_rects: List of existing layout rectangles.
-#         font_stats: A dictionary mapping (font name, font size) to the most common label within that font group.
-
-#     Returns:
-#         A list of new layout rectangles created by combining the outside text rectangles.
-#     """
-#     new_layout_rects = []
-#     grouped_rects = set()  # Track already grouped rectangles to avoid duplicates
-
-#     for outside_rect in outside_rects:
-#         rect_key = (outside_rect.x0, outside_rect.y0, outside_rect.x1, outside_rect.y1)
-#         if rect_key in grouped_rects:
-#             continue
-
-#         # Start with the first rect in the line
-#         current_group = outside_rect
-
-#         for other_rect in outside_rects:
-#             other_key = (other_rect.x0, other_rect.y0, other_rect.x1, other_rect.y1)
-#             if other_key != rect_key and other_key not in grouped_rects:
-#                 # Check if other_rect is aligned horizontally (within the same line) and is close enough
-#                 if abs(current_group.y1 - other_rect.y0) < 10 and within_same_line(
-#                         [current_group.x0, current_group.y0, current_group.x1, current_group.y1],
-#                         [other_rect.x0, other_rect.y0, other_rect.x1, other_rect.y1]):
-
-#                     # Tentatively expand the current group to include the other rectangle
-#                     tentative_group = TextRect(
-#                         x0=min(current_group.x0, other_rect.x0),
-#                         y0=min(current_group.y0, other_rect.y0),
-#                         x1=max(current_group.x1, other_rect.x1),
-#                         y1=max(current_group.y1, other_rect.y1),
-#                         text=current_group.text + " " + other_rect.text,
-#                         fontname=current_group.fontname,
-#                         size=current_group.size
-#                     )
-
-#                     # Check if the new group overlaps with any existing layout rects
-#                     new_rect_box = [tentative_group.x0, tentative_group.y0, tentative_group.x1, tentative_group.y1]
-#                     if not any(rects_overlap(new_rect_box, existing_rect.box) for existing_rect in layout_rects):
-#                         # No overlap, so finalize the group
-#                         current_group = tentative_group
-#                         grouped_rects.add(other_key)
-#                     else:
-#                         # Overlap detected, so skip adding this rect to the current group
-#                         logger.debug(f"Skipping adding rect {other_rect.box} to current group due to overlap.")
-
-#         # Determine the label based on the font information
-#         font_key = (current_group.fontname, current_group.size)
-#         matching_type = font_stats.get(font_key, "Text")  # Default to "Text" if no match is found
-
-#         # Create a new layout rect based on the grouped rect
-#         new_rect = LabelBox(
-#             label=matching_type,
-#             box=[current_group.x0, current_group.y0, current_group.x1, current_group.y1]
-#         )
-
-#         # Add the new rect to the final layout
-#         new_layout_rects.append(new_rect)
-#         grouped_rects.add(rect_key)  # Add the current_group's rect key to the grouped_rects set
-
-#     layout_rects.extend(new_layout_rects)
-
-#     return layout_rects
-
-
 def regroup_outside_text(outside_rects: List[TextRect], layout_rects: List[LabelBox], font_stats: Dict[Tuple[str, float], str]) -> List[LabelBox]:
     """
     Group the outside text rectangles into larger blocks, combining them line by line while ensuring that
@@ -540,48 +406,45 @@ def regroup_outside_text(outside_rects: List[TextRect], layout_rects: List[Label
     grouped_rects = set()  # Track already combined rectangles
 
     # Sort outside_rects by y0 (top-to-bottom)
-    outside_rects.sort(key=lambda r: r.y0)
+    outside_rects.sort(key=lambda r: r.box[1])
 
     i = 0
     while i < len(outside_rects):
-        if (outside_rects[i].x0, outside_rects[i].y0, outside_rects[i].x1, outside_rects[i].y1) in grouped_rects:
+        if (outside_rects[i].box[0], outside_rects[i].box[1], outside_rects[i].box[2], outside_rects[i].box[3]) in grouped_rects:
             i += 1
             continue
         
         # Start a new group with the current rectangle
         current_group = outside_rects[i]
-        grouped_rects.add((current_group.x0, current_group.y0, current_group.x1, current_group.y1))
+        grouped_rects.add((current_group.box[0], current_group.box[1], current_group.box[2], current_group.box[3]))
         i += 1
         
         # Try to combine with subsequent rectangles
         j = i
         while j < len(outside_rects):
-            if (outside_rects[j].x0, outside_rects[j].y0, outside_rects[j].x1, outside_rects[j].y1) in grouped_rects:
+            if (outside_rects[j].box[0], outside_rects[j].box[1], outside_rects[j].box[2], outside_rects[j].box[3]) in grouped_rects:
                 j += 1
                 continue
 
-            # # Check if the current rect is aligned and close enough to be in the same group
-            # if abs(current_group.y1 - outside_rects[j].y0) < 10 and within_same_line(
-            #         [current_group.x0, current_group.y0, current_group.x1, current_group.y1],
-            #         [outside_rects[j].x0, outside_rects[j].y0, outside_rects[j].x1, outside_rects[j].y1]):
-
             # Tentatively expand the group to include the next rectangle
             tentative_group = TextRect(
-                x0=min(current_group.x0, outside_rects[j].x0),
-                y0=min(current_group.y0, outside_rects[j].y0),
-                x1=max(current_group.x1, outside_rects[j].x1),
-                y1=max(current_group.y1, outside_rects[j].y1),
+                box=[
+                    min(current_group.box[0], outside_rects[j].box[0]),
+                    min(current_group.box[1], outside_rects[j].box[1]),
+                    max(current_group.box[2], outside_rects[j].box[2]),
+                    max(current_group.box[3], outside_rects[j].box[3])
+                    ],
                 text=current_group.text + " " + outside_rects[j].text,
                 fontname=current_group.fontname,
                 size=current_group.size
             )
 
             # Check for overlap with existing layout rects
-            new_rect_box = [tentative_group.x0, tentative_group.y0, tentative_group.x1, tentative_group.y1]
+            new_rect_box = tentative_group.box
             if not any(rects_overlap(new_rect_box, existing_rect.box) for existing_rect in layout_rects):
                 # No overlap, finalize this addition to the group
                 current_group = tentative_group
-                grouped_rects.add((outside_rects[j].x0, outside_rects[j].y0, outside_rects[j].x1, outside_rects[j].y1))
+                grouped_rects.add((outside_rects[j].box[0], outside_rects[j].box[1], outside_rects[j].box[2], outside_rects[j].box[3]))
             else:
                 # Overlap detected, stop trying to add more to this group
                 break
@@ -595,7 +458,7 @@ def regroup_outside_text(outside_rects: List[TextRect], layout_rects: List[Label
         # Create a new layout rect based on the grouped rect
         new_rect = LabelBox(
             label=matching_type,
-            box=[current_group.x0, current_group.y0, current_group.x1, current_group.y1]
+            box=current_group.box
         )
 
         # Add the new rect to the final layout
