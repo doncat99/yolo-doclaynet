@@ -161,5 +161,4 @@ cython_debug/
 
 datasets/
 runs/
-*.pt
 *.zip
