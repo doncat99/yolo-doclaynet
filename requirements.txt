@@ -1,3 +1,4 @@
+pdfplumber
 ultralytics
 clearml
 typer

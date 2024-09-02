@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer with Detection and Comparison</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 80%;
+            width: 100%;
+        }
+
+        #image-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 60vh;
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            overflow: hidden;
+        }
+
+        #image-viewer {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        #svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+
+        #detection-result {
+            margin-top: 20px;
+            font-weight: bold;
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>PDF Viewer with Detection and Comparison</h1>
+        <input type="file" id="pdfInput" accept="application/pdf">
+        <button onclick="uploadPDF()">Upload PDF</button>
+        <div id="image-container">
+            <img id="image-viewer" src="" alt="Page will be displayed here" onload="resizeOverlays()">
+            <svg id="svg-overlay"></svg>
+        </div>
+        <div>
+            <button onclick="prevPage()">Previous</button>
+            <button onclick="nextPage()">Next</button>
+            <button onclick="detectPage()">Detect</button>
+            <button onclick="compareLayout()">Compare</button>
+            <button onclick="reclassifyLayout()">Reclassify</button>
+        </div>
+        <p id="page-info"></p>
+        <div id="detection-result"></div>
+    </div>
+
+    <script>
+        let file_id = ""; // Global variable to store the file_id
+        let currentPage = 1;
+        let totalPages = 0;
+
+        // Layer-specific data and flags
+        let detectionRects = [];
+        let insideRects = [];
+        let outsideRects = [];
+        let reclassifiedRects = [];
+
+        let detectionLayerUpdated = false;
+        let compareLayerUpdated = false;
+        let reclassifyLayerUpdated = false;
+
+        async function uploadPDF() {
+            const pdfInput = document.getElementById("pdfInput");
+
+            if (pdfInput.files.length === 0) {
+                alert("Please select a PDF file.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", pdfInput.files[0]);
+
+            try {
+                const response = await fetch("/upload-pdf/", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to upload PDF: ${response.statusText}`);
+                }
+
+                const pageData = await response.json();
+                file_id = pageData[0].image_url.split("/")[2].split("_")[0]; // Extract and store the file_id
+                console.log("File ID:", file_id); // For debugging, ensure the file_id is captured
+
+                totalPages = pageData.length;
+                displayPage(1); // Display the first page after uploading
+
+            } catch (error) {
+                console.error("Error:", error);
+                alert("An error occurred while uploading the PDF.");
+            }
+        }
+
+        function displayPage(pageNumber) {
+            if (pageNumber < 1 || pageNumber > totalPages) {
+                return;
+            }
+
+            currentPage = pageNumber;
+            const imageViewer = document.getElementById("image-viewer");
+
+            // Load the page image
+            imageViewer.src = `/images/${file_id}_page_${currentPage}.jpeg`;
+            document.getElementById("page-info").textContent = `Page ${currentPage} of ${totalPages}`;
+
+            // Clear all layers when navigating between pages
+            clearLayers();
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                clearLayers(); // Clear layers before navigating
+                displayPage(currentPage - 1);
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                clearLayers(); // Clear layers before navigating
+                displayPage(currentPage + 1);
+            }
+        }
+
+        function clearLayers() {
+            detectionRects = [];
+            insideRects = [];
+            outsideRects = [];
+            reclassifiedRects = [];
+
+            detectionLayerUpdated = false;
+            compareLayerUpdated = false;
+            reclassifyLayerUpdated = false;
+
+            clearSVGOverlay(); // Clear the SVG overlay
+        }
+
+        function clearSVGOverlay() {
+            const svgOverlay = document.getElementById("svg-overlay");
+            svgOverlay.innerHTML = ""; // Clear all SVG elements
+        }
+
+        function drawLayers() {
+            const svgOverlay = document.getElementById("svg-overlay");
+
+            if (detectionLayerUpdated) {
+                drawDetectionLayer(svgOverlay);
+                detectionLayerUpdated = false;
+            }
+
+            if (compareLayerUpdated) {
+                drawCompareLayer(svgOverlay);
+                compareLayerUpdated = false;
+            }
+
+            if (reclassifyLayerUpdated) {
+                drawReclassifyLayer(svgOverlay);
+                reclassifyLayerUpdated = false;
+            }
+        }
+
+        function drawDetectionLayer(svgOverlay) {
+            detectionRects.forEach(box => {
+                const rect = { x0: box.box[0], y0: box.box[1], x1: box.box[2], y1: box.box[3] };
+                const rectElement = createSVGRect(rect, "green");
+                const textElement = createSVGText(rect, box.label, "green");
+                svgOverlay.appendChild(rectElement);
+                svgOverlay.appendChild(textElement);
+            });
+        }
+
+        function drawCompareLayer(svgOverlay) {
+            outsideRects.forEach(rect => {
+                const textElement = createSVGText(rect, rect.text, "blue");
+                svgOverlay.appendChild(textElement);
+            });
+
+            insideRects.forEach(rect => {
+                const textElement = createSVGText(rect, rect.text, "red");
+                svgOverlay.appendChild(textElement);
+            });
+        }
+
+        function drawReclassifyLayer(svgOverlay) {
+            reclassifiedRects.forEach(box => {
+                const rect = { x0: box.box[0], y0: box.box[1], x1: box.box[2], y1: box.box[3] };
+                const rectElement = createSVGRect(rect, "purple");
+                const textElement = createSVGText(rect, box.label, "purple");
+                svgOverlay.appendChild(rectElement);
+                svgOverlay.appendChild(textElement);
+            });
+        }
+
+        function resizeOverlays() {
+            const imageViewer = document.getElementById("image-viewer");
+            const svgOverlay = document.getElementById("svg-overlay");
+
+            const displayedWidth = imageViewer.clientWidth;
+            const displayedHeight = imageViewer.clientHeight;
+
+            svgOverlay.setAttribute("width", displayedWidth);
+            svgOverlay.setAttribute("height", displayedHeight);
+
+            drawLayers(); // Redraw the layers after resizing
+        }
+
+        async function detectPage() {
+            if (!file_id) {
+                alert("No file ID available. Please upload a PDF first.");
+                return;
+            }
+
+            const detectionResult = document.getElementById("detection-result");
+            detectionResult.textContent = "Detecting...";
+
+            try {
+                const imageBlob = await fetch(`/get-image/${file_id}/${currentPage}`).then(res => res.blob());
+
+                const formData = new FormData();
+                formData.append("image", imageBlob, `page_${currentPage}.jpeg`);
+                formData.append("file_id", file_id);
+                formData.append("page_number", currentPage);
+
+                const response = await fetch(`/api/detect`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Detection failed: ${response.statusText}`);
+                }
+
+                detectionRects = await response.json(); // Store detection rectangles
+                detectionLayerUpdated = true;
+                insideRects = [];
+                outsideRects = [];
+                reclassifiedRects = [];
+
+                console.log("Detection Result:", detectionRects);
+
+                clearSVGOverlay(); // Clear all existing layers before drawing
+                drawLayers();
+
+                detectionResult.innerHTML = `
+                    <h3>Detection Results:</h3>
+                    <p>Objects Detected: ${detectionRects.length}</p>
+                    <ul>
+                        ${detectionRects.map(box => `<li>${box.label}: [${box.box.join(', ')}]</li>`).join('')}
+                    </ul>
+                `;
+
+            } catch (error) {
+                console.error("Error in detectPage:", error);
+                detectionResult.textContent = "An error occurred during detection.";
+            }
+        }
+
+        async function compareLayout() {
+            if (!file_id) {
+                alert("No file ID available. Please upload a PDF first.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/compare", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        file_id: file_id,
+                        page_number: currentPage
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Comparison failed: ${response.statusText}`);
+                }
+
+                const compareResult = await response.json();
+                insideRects = compareResult.inside;
+                outsideRects = compareResult.outside;
+                compareLayerUpdated = true;
+
+                drawLayers();
+
+            } catch (error) {
+                console.error("Error in compareLayout:", error);
+                alert("An error occurred during comparison.");
+            }
+        }
+
+        async function reclassifyLayout() {
+            if (!file_id) {
+                alert("No file ID available. Please upload a PDF first.");
+                return;
+            }
+        
+            try {
+                const response = await fetch("/reclassify", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        file_id: file_id,
+                        page_number: currentPage
+                    })
+                });
+        
+                if (!response.ok) {
+                    throw new Error(`Reclassification failed: ${response.statusText}`);
+                }
+        
+                // The backend returns a list of LabelBox objects, so we directly handle it as an array.
+                reclassifiedRects = await response.json();
+
+                console.log("Reclassification Result:", reclassifiedRects);
+
+                reclassifyLayerUpdated = true;
+                clearSVGOverlay(); // Clear all existing layers before drawing
+                drawLayers();
+        
+            } catch (error) {
+                console.error("Error in reclassifyLayout:", error);
+                alert("An error occurred during reclassification.");
+            }
+        }
+                        
+        function createSVGText(rect, text, color) {
+            const imageViewer = document.getElementById("image-viewer");
+
+            // Get the actual size of the displayed image
+            const displayedWidth = imageViewer.clientWidth;
+            const displayedHeight = imageViewer.clientHeight;
+
+            // Get the natural dimensions of the image
+            const naturalWidth = imageViewer.naturalWidth;
+            const naturalHeight = imageViewer.naturalHeight;
+
+            const scaleX = displayedWidth / naturalWidth;
+            const scaleY = displayedHeight / naturalHeight;
+
+            const x = rect.x0 * scaleX;
+            const y = rect.y0 * scaleY;
+            const width = (rect.x1 - rect.x0) * scaleX;
+            const height = (rect.y1 - rect.y0) * scaleY;
+
+            const textElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            textElement.setAttribute("x", x + width / 2);
+            textElement.setAttribute("y", y + height / 2);
+            textElement.setAttribute("fill", color);
+            textElement.setAttribute("text-anchor", "middle");
+            textElement.setAttribute("alignment-baseline", "middle");
+            textElement.style.fontSize = `${Math.min(height, 12)}px`;
+            textElement.style.fontFamily = 'Noto Sans, Arial, sans-serif';
+
+            while (textElement.getComputedTextLength() > width && parseInt(textElement.style.fontSize) > 8) {
+                textElement.style.fontSize = `${parseInt(textElement.style.fontSize) - 1}px`;
+            }
+
+            textElement.textContent = text;
+            return textElement;
+        }
+
+        function createSVGRect(rect, color) {
+            const imageViewer = document.getElementById("image-viewer");
+
+            // Get the actual size of the displayed image
+            const displayedWidth = imageViewer.clientWidth;
+            const displayedHeight = imageViewer.clientHeight;
+
+            // Get the natural dimensions of the image
+            const naturalWidth = imageViewer.naturalWidth;
+            const naturalHeight = imageViewer.naturalHeight;
+
+            const scaleX = displayedWidth / naturalWidth;
+            const scaleY = displayedHeight / naturalHeight;
+
+            const x = rect.x0 * scaleX;
+            const y = rect.y0 * scaleY;
+            const width = (rect.x1 - rect.x0) * scaleX;
+            const height = (rect.y1 - rect.y0) * scaleY;
+            
+            // Log the values for debugging
+            console.log(`Creating rect: x=${x}, y=${y}, width=${width}, height=${height}, color=${color}`);
+        
+            // Check for NaN values or invalid dimensions and skip drawing if found
+            if (isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+                console.error("Invalid rectangle dimensions, skipping drawing:", { x, y, width, height });
+                return null;
+            }
+
+            const rectElement = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rectElement.setAttribute("x", x);
+            rectElement.setAttribute("y", y);
+            rectElement.setAttribute("width", width);
+            rectElement.setAttribute("height", height);
+            rectElement.setAttribute("fill", "none");
+            rectElement.setAttribute("stroke", color);
+            rectElement.setAttribute("stroke-width", "2");
+            return rectElement;
+        }
+        
+    </script>
+</body>
+
+</html>
