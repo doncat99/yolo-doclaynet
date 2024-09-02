@@ -17,7 +17,7 @@ LABEL_PRIORITY = {
 
 # Define the overlap threshold and within a line threshold
 INSIDE_THRESHOLD = 0.95
-OVERLAP_THRESHOLD = 0.05
+OVERLAP_THRESHOLD = 0.10
 LINE_OVERLAP_THRESHOLD = 0.98
 
 def validate_rectangle(rect: LabelBox) -> bool:
@@ -97,7 +97,7 @@ def reclassify_layout(file_id: str, page_number: int, comparison_results: Dict, 
     
     # Step 5: Split layout rects based on font analysis
     font_stats = calculate_font_statistics(inside_rects, processed_rects)
-    processed_rects = split_rects_based_on_fonts(processed_rects, inside_rects, font_stats)
+    # processed_rects = split_rects_based_on_fonts(processed_rects, inside_rects, font_stats)
 
     # Step 6: Validate and return the list of rectangles
     processed_rects = [rect for rect in processed_rects if validate_rectangle(rect)]
